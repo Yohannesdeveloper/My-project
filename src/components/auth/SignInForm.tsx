@@ -53,6 +53,9 @@ export function SignInForm() {
     >
       <h2 className="text-xl font-bold tracking-tight text-white">Sign in</h2>
       <p className="mt-2 text-sm text-white/40">Access your workspace and projects.</p>
+      <p className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-white/45">
+        Demo: <span className="text-white/70">seed1@aspio.io</span> / <span className="text-white/70">SeedPass123!</span>
+      </p>
 
       <form className="mt-6 flex flex-col gap-5" onSubmit={onSubmit}>
         <div className="flex flex-col gap-2">
