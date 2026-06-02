@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import type { Tables } from "@/lib/supabase/database.types";
+import { parseOverdueTasksResponse } from "@/lib/overdue";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/ToastProvider";
 import { CommandPaletteTrigger } from "@/components/ui/CommandPalette";
@@ -13,6 +13,16 @@ import {
   useDeleteTask,
   type TaskRow,
 } from "@/hooks/useRealtimeTasks";
+import {
+  formatDueDate,
+  fromDateInputValue,
+  getAssigneeName,
+  isOverdue,
+  toDateInputValue,
+  type OverdueTask,
+  type TaskStatus,
+  type WorkspaceMember,
+} from "@/components/project/shared";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -33,20 +43,6 @@ import {
   LayoutGrid,
 } from "lucide-react";
 
-type TaskStatus = "todo" | "in_progress" | "done";
-
-type WorkspaceMember = Pick<Tables<"workspace_members">, "user_id" | "display_name">;
-
-type OverdueTask = {
-  id: string;
-  title: string;
-  description: string;
-  status: TaskStatus;
-  due_date: string | null;
-  assignee_id: string | null;
-  assignee_name: string | null;
-};
-
 type Props = {
   workspaceId: string;
   projectId: string;
@@ -60,40 +56,6 @@ const STATUS_OPTIONS: { value: TaskStatus; label: string; icon: typeof Circle; c
   { value: "in_progress", label: "In Progress", icon: Clock, color: "text-electric-blue" },
   { value: "done", label: "Done", icon: CheckCircle2, color: "text-mint" },
 ];
-
-function formatDueDate(value: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
-}
-
-function isOverdue(value: string | null, status: TaskStatus): boolean {
-  if (!value || status === "done") return false;
-  return new Date(value).getTime() < Date.now();
-}
-
-function toDateInputValue(value: string | null): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function fromDateInputValue(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
-
-function getAssigneeName(id: string | null, members: WorkspaceMember[]): string {
-  if (!id) return "Unassigned";
-  return members.find((m) => m.user_id === id)?.display_name ?? "Unknown";
-}
 
 export function ProjectViewClient({
   workspaceId,
@@ -110,8 +72,10 @@ export function ProjectViewClient({
   const { tasks, setTasks } = useRealtimeTasks(projectId, initialTasks);
   const deleteTask = useDeleteTask(setTasks);
 
+  const initialSelectedTask = initialTasks[0] ?? null;
+
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
-    initialTasks[0]?.id ?? null,
+    initialSelectedTask?.id ?? null,
   );
 
   const selectedTask = useMemo(
@@ -119,14 +83,32 @@ export function ProjectViewClient({
     [tasks, selectedTaskId],
   );
 
-  // Edit state
-  const [editing, setEditing] = useState<boolean>(false);
-  const [editTitle, setEditTitle] = useState<string>("");
-  const [editDescription, setEditDescription] = useState<string>("");
-  const [editStatus, setEditStatus] = useState<TaskStatus>("todo");
-  const [editAssigneeId, setEditAssigneeId] = useState<string>("");
-  const [editDueDate, setEditDueDate] = useState<string>("");
+  // Inline edit state (always editable when a task is selected)
+  const [editTitle, setEditTitle] = useState<string>(initialSelectedTask?.title ?? "");
+  const [editDescription, setEditDescription] = useState<string>(initialSelectedTask?.description ?? "");
+  const [editStatus, setEditStatus] = useState<TaskStatus>(initialSelectedTask?.status ?? "todo");
+  const [editAssigneeId, setEditAssigneeId] = useState<string>(initialSelectedTask?.assignee_id ?? "");
+  const [editDueDate, setEditDueDate] = useState<string>(toDateInputValue(initialSelectedTask?.due_date ?? null));
   const [saving, setSaving] = useState<boolean>(false);
+
+  const syncEditFormFromTask = (task: TaskRow): void => {
+    setEditTitle(task.title);
+    setEditDescription(task.description);
+    setEditStatus(task.status);
+    setEditAssigneeId(task.assignee_id ?? "");
+    setEditDueDate(toDateInputValue(task.due_date));
+  };
+
+  const isEditDirty = useMemo(() => {
+    if (!selectedTask) return false;
+    return (
+      editTitle !== selectedTask.title ||
+      editDescription !== selectedTask.description ||
+      editStatus !== selectedTask.status ||
+      (editAssigneeId || null) !== selectedTask.assignee_id ||
+      fromDateInputValue(editDueDate) !== selectedTask.due_date
+    );
+  }, [selectedTask, editTitle, editDescription, editStatus, editAssigneeId, editDueDate]);
 
   // Create state
   const [createMode, setCreateMode] = useState<boolean>(false);
@@ -137,9 +119,18 @@ export function ProjectViewClient({
   const [createDueDate, setCreateDueDate] = useState<string>("");
   const [createSaving, setCreateSaving] = useState<boolean>(false);
 
+  const selectTask = (id: string): void => {
+    setSelectedTaskId(id);
+    setCreateMode(false);
+    const task = tasks.find((t) => t.id === id);
+    if (task) syncEditFormFromTask(task);
+  };
+
   // Overdue state
   const [overdueTasks, setOverdueTasks] = useState<OverdueTask[]>([]);
   const [overdueOpen, setOverdueOpen] = useState<boolean>(false);
+  const [overdueLoading, setOverdueLoading] = useState<boolean>(false);
+  const [overdueError, setOverdueError] = useState<string | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -197,18 +188,8 @@ export function ProjectViewClient({
     router.replace(`${pathname}${qs ? `?${qs}` : ""}`);
   };
 
-  const openEdit = () => {
-    if (!selectedTask) return;
-    setEditing(true);
-    setEditTitle(selectedTask.title);
-    setEditDescription(selectedTask.description);
-    setEditStatus(selectedTask.status);
-    setEditAssigneeId(selectedTask.assignee_id ?? "");
-    setEditDueDate(toDateInputValue(selectedTask.due_date));
-  };
-
-  const cancelEdit = () => {
-    setEditing(false);
+  const resetEditForm = (): void => {
+    if (selectedTask) syncEditFormFromTask(selectedTask);
   };
 
   const onSave = async (e: FormEvent<HTMLFormElement>) => {
@@ -226,9 +207,7 @@ export function ProjectViewClient({
       due_date: fromDateInputValue(editDueDate),
     };
 
-    // Optimistic update
     setTasks((prev) => prev.map((t) => (t.id === optimistic.id ? optimistic : t)));
-    setEditing(false);
 
     const { error } = await supabaseBrowser
       .from("tasks")
@@ -243,7 +222,7 @@ export function ProjectViewClient({
 
     if (error) {
       setTasks(prevTasks);
-      setEditing(true);
+      syncEditFormFromTask(prevTasks.find((t) => t.id === selectedTask.id) ?? selectedTask);
       toast({
         variant: "error",
         title: "Save failed",
@@ -293,6 +272,7 @@ export function ProjectViewClient({
 
     setTasks((prev) => [...prev, newTask]);
     setSelectedTaskId(newTask.id);
+    syncEditFormFromTask(newTask);
     setCreateMode(false);
     setCreateSaving(false);
     toast({ variant: "success", title: "Task created", description: createTitle });
@@ -302,7 +282,6 @@ export function ProjectViewClient({
     setConfirmDeleteId(null);
     if (selectedTaskId === taskId) {
       setSelectedTaskId(null);
-      setEditing(false);
     }
     const success = await deleteTask(taskId);
     if (success) {
@@ -316,6 +295,9 @@ export function ProjectViewClient({
     const prevTasks = tasks;
     // Optimistic
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)));
+    if (selectedTaskId === task.id) {
+      setEditStatus(newStatus);
+    }
 
     const { error } = await supabaseBrowser
       .from("tasks")
@@ -334,24 +316,39 @@ export function ProjectViewClient({
     }
   };
 
-  const invokeOverdue = () => {
+  const invokeOverdue = async (): Promise<void> => {
     setOverdueOpen(true);
-    const overdue: OverdueTask[] = tasks
-      .filter((t) => isOverdue(t.due_date, t.status))
-      .map((t) => ({
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        status: t.status,
-        due_date: t.due_date,
-        assignee_id: t.assignee_id,
-        assignee_name: getAssigneeName(t.assignee_id, members),
-      }));
-    setOverdueTasks(overdue);
-    if (overdue.length === 0) {
+    setOverdueLoading(true);
+    setOverdueError(null);
+    setOverdueTasks([]);
+
+    const { data, error } = await supabaseBrowser.functions.invoke("overdue-tasks", {
+      body: { project_id: projectId },
+    });
+
+    setOverdueLoading(false);
+
+    if (error) {
+      setOverdueError(error.message);
+      toast({
+        variant: "error",
+        title: "Overdue check failed",
+        description: error.message,
+      });
+      return;
+    }
+
+    const parsed = parseOverdueTasksResponse(data);
+    setOverdueTasks(parsed);
+
+    if (parsed.length === 0) {
       toast({ variant: "success", title: "All on track!", description: "No overdue tasks found." });
     } else {
-      toast({ variant: "warning", title: `${overdue.length} overdue task${overdue.length > 1 ? "s" : ""}`, description: "See the panel above." });
+      toast({
+        variant: "warning",
+        title: `${parsed.length} overdue task${parsed.length > 1 ? "s" : ""}`,
+        description: "Results from the Edge Function (RLS enforced).",
+      });
     }
   };
 
@@ -424,11 +421,12 @@ export function ProjectViewClient({
             <Plus className="h-4 w-4" /> New task
           </button>
           <button
-            onClick={invokeOverdue}
-            className="btn-glass flex items-center gap-2 !py-2.5 !px-4 !text-sm"
+            onClick={() => void invokeOverdue()}
+            disabled={overdueLoading}
+            className="btn-glass flex items-center gap-2 !py-2.5 !px-4 !text-sm disabled:opacity-50"
           >
             <AlertTriangle className="h-4 w-4" />
-            Overdue
+            {overdueLoading ? "Checking..." : "Overdue"}
           </button>
         </div>
       </motion.div>
@@ -474,7 +472,15 @@ export function ProjectViewClient({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              {overdueTasks.length === 0 ? (
+              {overdueLoading ? (
+                <div className="mt-3 space-y-2">
+                  {Array.from({ length: 3 }).map((_, idx) => (
+                    <div key={idx} className="h-14 rounded-xl bg-white/[0.04] animate-pulse" />
+                  ))}
+                </div>
+              ) : overdueError ? (
+                <p className="mt-3 text-sm text-red-300">{overdueError}</p>
+              ) : overdueTasks.length === 0 ? (
                 <p className="mt-3 text-sm text-white/40">
                   No overdue tasks — all on track!
                 </p>
@@ -604,10 +610,7 @@ export function ProjectViewClient({
                           ? "bg-white/[0.05]"
                           : "hover:bg-white/[0.03]"
                       }`}
-                      onClick={() => {
-                        setSelectedTaskId(t.id);
-                        setEditing(false);
-                      }}
+                      onClick={() => selectTask(t.id)}
                     >
                       {/* Status quick-toggle */}
                       <StatusDot
@@ -693,19 +696,13 @@ export function ProjectViewClient({
             <div>
               <h2 className="text-sm font-bold text-white">Task Detail</h2>
               <p className="text-xs text-white/35 mt-0.5">
-                {editing ? "Editing — save or discard changes" : "Select a task to view details"}
+                {selectedTask
+                  ? isEditDirty
+                    ? "Unsaved changes — save or discard"
+                    : "All fields editable inline"
+                  : "Select a task to view details"}
               </p>
             </div>
-            {selectedTask && !editing && (
-              <button onClick={openEdit} className="btn-glass flex items-center gap-1.5 !py-2 !px-3 !text-xs">
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </button>
-            )}
-            {selectedTask && editing && (
-              <button onClick={cancelEdit} disabled={saving} className="btn-glass flex items-center gap-1.5 !py-2 !px-3 !text-xs disabled:opacity-50">
-                <X className="h-3.5 w-3.5" /> Cancel
-              </button>
-            )}
           </div>
 
           <div className="p-5">
@@ -751,9 +748,9 @@ export function ProjectViewClient({
                     />
                   )}
                 </motion.div>
-              ) : editing ? (
+              ) : (
                 <motion.form
-                  key="edit"
+                  key={selectedTask.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
@@ -807,48 +804,17 @@ export function ProjectViewClient({
                       className="glass-input h-11 w-full text-sm"
                     />
                   </Field>
-                  <div className="flex items-center gap-2 pt-2">
-                    <button type="submit" disabled={saving} className="btn-glow flex items-center gap-2 !py-2.5 !text-sm disabled:opacity-50">
-                      <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save"}
-                    </button>
-                    <button type="button" onClick={cancelEdit} disabled={saving} className="btn-glass !py-2.5 !text-sm disabled:opacity-50">
-                      Discard
-                    </button>
-                  </div>
+                  {isEditDirty && (
+                    <div className="flex items-center gap-2 pt-2">
+                      <button type="submit" disabled={saving} className="btn-glow flex items-center gap-2 !py-2.5 !text-sm disabled:opacity-50">
+                        <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save"}
+                      </button>
+                      <button type="button" onClick={resetEditForm} disabled={saving} className="btn-glass !py-2.5 !text-sm disabled:opacity-50">
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </motion.form>
-              ) : (
-                <motion.div
-                  key={selectedTask.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  className="flex flex-col gap-4"
-                >
-                  <div>
-                    <h3 className="text-lg font-bold text-white">{selectedTask.title}</h3>
-                    <p className="mt-2 text-sm text-white/50 leading-relaxed">
-                      {selectedTask.description || "No description"}
-                    </p>
-                  </div>
-                  <div className="grid gap-3 grid-cols-2">
-                    <DetailPill label="Status">
-                      <TaskStatusBadge status={selectedTask.status} />
-                    </DetailPill>
-                    <DetailPill label="Assignee">
-                      <span className="text-sm text-white/70">
-                        {getAssigneeName(selectedTask.assignee_id, members)}
-                      </span>
-                    </DetailPill>
-                    <DetailPill label="Due date">
-                      <span className={`text-sm ${isOverdue(selectedTask.due_date, selectedTask.status) ? "text-red-400 font-medium" : "text-white/70"}`}>
-                        {formatDueDate(selectedTask.due_date)}
-                      </span>
-                    </DetailPill>
-                    <DetailPill label="Priority">
-                      <span className="text-sm text-white/50">—</span>
-                    </DetailPill>
-                  </div>
-                </motion.div>
               )}
             </AnimatePresence>
           </div>
@@ -861,9 +827,8 @@ export function ProjectViewClient({
           tasks={filteredTasks}
           members={members}
           onSelectTask={(id: string) => {
-            setSelectedTaskId(id);
+            selectTask(id);
             setViewMode("list");
-            setEditing(false);
           }}
           onStatusChange={handleQuickStatusChange}
         />
@@ -878,15 +843,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium tracking-wide text-white/50">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function DetailPill({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-      <p className="text-xs text-white/35 mb-1.5">{label}</p>
       {children}
     </div>
   );

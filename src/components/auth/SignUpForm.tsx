@@ -72,6 +72,7 @@ export function SignUpForm() {
       if (data.session) {
         toast({ variant: "success", title: "Account created!", description: "Welcome to Aspio." });
         router.replace("/dashboard");
+        router.refresh();
         return;
       }
 

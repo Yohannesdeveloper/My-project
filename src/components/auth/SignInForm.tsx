@@ -27,6 +27,7 @@ export function SignInForm() {
         });
 
       if (signInError) {
+        console.error("Supabase sign-in error:", signInError, data);
         toast({ variant: "error", title: "Sign in failed", description: signInError.message });
         return;
       }
@@ -34,6 +35,7 @@ export function SignInForm() {
       if (data.session) {
         toast({ variant: "success", title: "Welcome back!" });
         router.replace("/dashboard");
+        router.refresh();
         return;
       }
 
