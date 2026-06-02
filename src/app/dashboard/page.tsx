@@ -1,12 +1,25 @@
 import { redirect } from "next/navigation";
 import { WorkspaceDashboardClient } from "@/components/workspace/WorkspaceDashboardClient";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/database.types";
 
 type DashboardSearchParams = {
   workspaceId?: string | string[] | undefined;
 };
 
 type TaskStatus = "todo" | "in_progress" | "done";
+
+type ProjectWithCounts = {
+  id: string;
+  name: string;
+  counts: Record<TaskStatus, number>;
+};
+
+type WorkspaceWithRole = {
+  id: string;
+  name: string;
+  role: "owner" | "member";
+};
 
 export default async function DashboardPage({
   searchParams,
@@ -15,6 +28,18 @@ export default async function DashboardPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const supabase = await createSupabaseServerClient();
+
+  // If Supabase isn't configured, show error message
+  if (!supabase) {
+    return (
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-yellow-500/20 bg-yellow-500/5 p-5 text-sm text-yellow-300">
+          Supabase environment variables not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
+        </div>
+      </main>
+    );
+  }
+
   const {
     data: { user },
     error: userError,
@@ -31,8 +56,8 @@ export default async function DashboardPage({
 
   if (membershipError) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
           Failed to load workspaces: {membershipError.message}
         </div>
       </main>
@@ -61,8 +86,8 @@ export default async function DashboardPage({
 
   if (workspacesError) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
           Failed to load workspace details: {workspacesError.message}
         </div>
       </main>
@@ -91,8 +116,8 @@ export default async function DashboardPage({
 
   if (projectsError) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
           Failed to load projects: {projectsError.message}
         </div>
       </main>
@@ -110,10 +135,10 @@ export default async function DashboardPage({
 
       if (tasksError) {
         return {
-          id: project.id as string,
-          name: String(project.name),
+          id: project.id,
+          name: project.name,
           counts: { todo: 0, in_progress: 0, done: 0 } satisfies Record<TaskStatus, number>,
-        };
+        } satisfies ProjectWithCounts;
       }
 
       const counts: Record<TaskStatus, number> = {
@@ -127,17 +152,17 @@ export default async function DashboardPage({
       }
 
       return {
-        id: project.id as string,
-        name: String(project.name),
+        id: project.id,
+        name: project.name,
         counts,
-      };
+      } satisfies ProjectWithCounts;
     }),
   );
 
-  const workspaceSummaries = workspaceRows.map((w) => ({
-    id: w.id as string,
-    name: String(w.name),
-    role: roleByWorkspaceId.get(w.id as string) ?? "member",
+  const workspaceSummaries: WorkspaceWithRole[] = workspaceRows.map((w: Pick<Tables<"workspaces">, "id" | "name">) => ({
+    id: w.id,
+    name: w.name,
+    role: roleByWorkspaceId.get(w.id) ?? "member",
   }));
 
   return (

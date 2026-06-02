@@ -2,23 +2,22 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-
-type SignInError = string | null;
+import { useToast } from "@/components/ui/ToastProvider";
+import { motion } from "framer-motion";
+import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 
 export function SignInForm() {
   const router = useRouter();
+  const { toast } = useToast();
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [error, setError] = useState<SignInError>(null);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError(null);
     setSubmitting(true);
     try {
       const { data, error: signInError } =
@@ -28,78 +27,97 @@ export function SignInForm() {
         });
 
       if (signInError) {
-        setError(signInError.message);
+        toast({ variant: "error", title: "Sign in failed", description: signInError.message });
         return;
       }
 
       if (data.session) {
+        toast({ variant: "success", title: "Welcome back!" });
         router.replace("/dashboard");
         return;
       }
 
-      // If session wasn't returned (depends on Supabase config), fall back to user guidance.
-      setError("Check your email for the confirmation link, then sign in.");
+      toast({ variant: "info", title: "Check your email", description: "Confirmation link required." });
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="mb-2">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-          Sign in
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-          Use your Supabase credentials to access your workspaces.
-        </p>
-      </div>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="glass-card p-8"
+    >
+      <h2 className="text-xl font-bold tracking-tight text-white">Sign in</h2>
+      <p className="mt-2 text-sm text-white/40">Access your workspace and projects.</p>
 
-      <form className="mt-4 flex flex-col gap-4" onSubmit={onSubmit}>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            name="email"
-            autoComplete="email"
-            inputMode="email"
-            value={email}
-            onChange={(ev) => setEmail(ev.target.value)}
-            required
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(ev) => setPassword(ev.target.value)}
-            required
-          />
-        </div>
-
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-            {error}
+      <form className="mt-6 flex flex-col gap-5" onSubmit={onSubmit}>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="email" className="text-xs font-medium tracking-wide text-white/50">
+            Email
+          </label>
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              value={email}
+              onChange={(ev) => setEmail(ev.target.value)}
+              required
+              className="glass-input h-12 w-full text-sm"
+              style={{ paddingLeft: "2.75rem" }}
+              placeholder="you@example.com"
+            />
           </div>
-        ) : null}
+        </div>
 
-        <Button type="submit" disabled={submitting}>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="password" className="text-xs font-medium tracking-wide text-white/50">
+            Password
+          </label>
+          <div className="relative">
+            <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              value={password}
+              onChange={(ev) => setPassword(ev.target.value)}
+              required
+              className="glass-input h-12 w-full text-sm"
+              style={{ paddingLeft: "2.75rem", paddingRight: "2.75rem" }}
+              placeholder="••••••••"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-white/30 hover:text-white/60"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn-glow w-full !py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           {submitting ? "Signing in..." : "Sign in"}
-        </Button>
+        </button>
       </form>
 
-      <div className="mt-4 text-sm text-zinc-600 dark:text-zinc-300">
+      <div className="mt-6 text-center text-sm text-white/35">
         New here?{" "}
-        <a className="font-medium text-zinc-950 underline underline-offset-4 dark:text-zinc-50" href="/auth/sign-up">
+        <Link className="font-semibold text-cyan/80 transition-colors hover:text-cyan" href="/auth/sign-up">
           Create an account
-        </a>
+        </Link>
       </div>
-    </div>
+    </motion.div>
   );
 }
-

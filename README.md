@@ -2,7 +2,7 @@
 
 ### Time window
 - Start: `2026-06-02 14:48 UTC+3`
-- End: `2026-06-02 15:55 UTC+3`
+- End: `2026-06-02 18:00 UTC+3`
 
 ## What’s implemented
 - Next.js (App Router) UI scaffold
@@ -71,3 +71,34 @@ SUPABASE_PROJECT_REF=YOUR_PROJECT_REF bash supabase/deploy-edge-functions.sh
 3. Apply the DB schema: `psql "$SUPABASE_DB_URL" -f schema.sql` (or run `schema.sql` in the Supabase SQL editor)
 4. Generate types: `npx supabase gen types typescript --project-ref "$SUPABASE_PROJECT_REF"`
 5. `npm run dev`
+
+## Notes for Reviewers
+
+### Known Issues & Limitations
+- **No pagination**: Task lists load all tasks at once. For production, cursor-based or offset pagination would be needed for projects with hundreds of tasks
+- **No file attachments**: Tasks don't support file uploads or attachments
+- **Basic search**: No full-text search across tasks; filtering is limited to status and assignee
+- **No drag-and-drop**: Task status changes require editing the task detail panel rather than drag-and-drop between columns
+- **Edge Function auth**: The overdue-tasks Edge Function uses service role key for simplicity; production should implement proper user context and authorization checks
+- **No real-time collaboration indicators**: No presence detection or "user is typing" indicators when multiple users edit the same task
+
+### Tradeoffs Made
+- **Client-side filtering**: URL-based filtering (`?status=todo&assignee=xyz`) is simple and shareable but could become unwieldy with many filter combinations. A more robust solution might use POST-based filter queries
+- **Optimistic UI only**: Task edits use optimistic updates without server-side validation before applying changes. This prioritizes UX speed but could lead to brief inconsistencies if the server rejects the update
+- **Per-project subscriptions**: Realtime subscriptions are scoped to individual projects to reduce bandwidth, but users switching between projects frequently will experience subscription churn
+- **No caching layer**: All data fetches hit the database directly. For production, implementing SWR/React Query with stale-while-revalidate would reduce database load
+- **Seed users in schema**: Seed auth users are created via SQL for demo purposes. In production, auth users should be created through Supabase Auth API or invitation flow
+
+### What I'd Do With More Time
+1. **Kanban board view**: Add a drag-and-drop board layout for visual task management across statuses
+2. **Advanced filtering & search**: Implement full-text search, date range filters, priority levels, and saved filter presets
+3. **Real-time cursors/presence**: Show who's viewing/editing a task in real-time using Supabase presence
+4. **Notifications system**: Email/in-app notifications for task assignments, due date reminders, and status changes
+5. **Workspace settings**: Admin panel for managing workspace members, roles, and permissions
+6. **Activity feed**: Audit log showing task history, who changed what, and when
+7. **Performance optimization**: Implement virtualized lists for large task collections, pagination, and query result caching
+8. **Mobile responsiveness**: Optimize layouts for mobile and tablet devices
+9. **Comprehensive testing**: Add unit tests, integration tests, and E2E tests with Playwright
+10. **CI/CD pipeline**: Set up automated testing, linting, and deployment workflows
+11. **Analytics dashboard**: Charts and metrics for project velocity, task completion rates, and team workload
+12. **Import/Export**: CSV import for bulk task creation and export capabilities for reporting

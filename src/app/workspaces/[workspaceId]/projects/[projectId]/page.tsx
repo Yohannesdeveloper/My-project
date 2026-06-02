@@ -15,6 +15,17 @@ export default async function ProjectPage({
   const resolvedParams = await params;
   const supabase = await createSupabaseServerClient();
 
+  // If Supabase isn't configured, show error message
+  if (!supabase) {
+    return (
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-yellow-500/20 bg-yellow-500/5 p-5 text-sm text-yellow-300">
+          Supabase environment variables not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
+        </div>
+      </main>
+    );
+  }
+
   const {
     data: { user },
     error: userError,
@@ -33,9 +44,9 @@ export default async function ProjectPage({
 
   if (membershipError || !membershipRow) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-          You don’t have access to this workspace.
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+          You don&apos;t have access to this workspace.
         </div>
       </main>
     );
@@ -49,8 +60,8 @@ export default async function ProjectPage({
 
   if (projectError || !projectRow) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
           Failed to load project.
         </div>
       </main>
@@ -64,8 +75,8 @@ export default async function ProjectPage({
 
   if (membersError) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
           Failed to load workspace members.
         </div>
       </main>
@@ -80,8 +91,8 @@ export default async function ProjectPage({
 
   if (tasksError) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+      <main className="mx-auto w-full max-w-6xl px-6 pb-10 pt-8">
+        <div className="glass-card border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
           Failed to load tasks.
         </div>
       </main>
@@ -104,6 +115,7 @@ export default async function ProjectPage({
 
   return (
     <ProjectViewClient
+      key={resolvedParams.projectId}
       workspaceId={resolvedParams.workspaceId}
       projectId={resolvedParams.projectId}
       projectName={projectRow.name}
