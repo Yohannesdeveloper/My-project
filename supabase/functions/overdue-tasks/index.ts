@@ -11,12 +11,30 @@ type OverdueTask = {
   assignee_name: string | null;
 };
 
+const corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
+}
+
 serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Use POST" }), {
-      status: 405,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonResponse(405, { error: "Use POST" });
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -24,10 +42,7 @@ serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseAnonKey) {
-    return new Response(JSON.stringify({ error: "Missing env vars" }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonResponse(500, { error: "Missing env vars" });
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -38,10 +53,7 @@ serve(async (req: Request) => {
   try {
     body = await req.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonResponse(400, { error: "Invalid JSON body" });
   }
 
   const projectId =
@@ -50,16 +62,11 @@ serve(async (req: Request) => {
       : undefined;
 
   if (typeof projectId !== "string") {
-    return new Response(JSON.stringify({ error: "project_id is required" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonResponse(400, { error: "project_id is required" });
   }
 
   const nowIso = new Date().toISOString();
 
-  // Fetch tasks + their workspace_id (via the project relationship).
-  // RLS is enforced because we create the client with the caller's JWT.
   const { data: tasks, error: tasksError } = await supabase
     .from("tasks")
     .select("id,title,description,status,due_date,assignee_id,projects:project_id(workspace_id)")
@@ -68,10 +75,7 @@ serve(async (req: Request) => {
     .lt("due_date", nowIso);
 
   if (tasksError) {
-    return new Response(JSON.stringify({ error: tasksError.message }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonResponse(400, { error: tasksError.message });
   }
 
   const typedTasks = (tasks ?? []) as Array<{
@@ -94,19 +98,17 @@ serve(async (req: Request) => {
     ),
   );
 
-  const { data: members, error: membersError } = workspaceId && assigneeIds.length > 0
-    ? await supabase
-      .from("workspace_members")
-      .select("user_id,display_name")
-      .eq("workspace_id", workspaceId)
-      .in("user_id", assigneeIds)
-    : { data: [], error: null as unknown };
+  const { data: members, error: membersError } =
+    workspaceId && assigneeIds.length > 0
+      ? await supabase
+          .from("workspace_members")
+          .select("user_id,display_name")
+          .eq("workspace_id", workspaceId)
+          .in("user_id", assigneeIds)
+      : { data: [], error: null as unknown };
 
   if (membersError) {
-    return new Response(JSON.stringify({ error: membersError.message }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonResponse(400, { error: membersError.message });
   }
 
   const memberByUserId = new Map<string, string>();
@@ -124,9 +126,5 @@ serve(async (req: Request) => {
     assignee_name: t.assignee_id ? memberByUserId.get(t.assignee_id) ?? null : null,
   }));
 
-  return new Response(JSON.stringify(result), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
+  return jsonResponse(200, result);
 });
-
