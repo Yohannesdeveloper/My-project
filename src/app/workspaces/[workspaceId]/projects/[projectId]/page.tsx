@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ProjectViewClient } from "@/components/project/ProjectViewClient";
+import ProjectLoading from "./loading";
 import { redirect } from "next/navigation";
 
 type RouteParams = {
@@ -114,14 +116,16 @@ export default async function ProjectPage({
   }));
 
   return (
-    <ProjectViewClient
-      key={resolvedParams.projectId}
-      workspaceId={resolvedParams.workspaceId}
-      projectId={resolvedParams.projectId}
-      projectName={projectRow.name}
-      members={members}
-      initialTasks={initialTasks}
-    />
+    <Suspense fallback={<ProjectLoading />}>
+      <ProjectViewClient
+        key={resolvedParams.projectId}
+        workspaceId={resolvedParams.workspaceId}
+        projectId={resolvedParams.projectId}
+        projectName={projectRow.name}
+        members={members}
+        initialTasks={initialTasks}
+      />
+    </Suspense>
   );
 }
 
