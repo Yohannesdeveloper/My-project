@@ -610,7 +610,10 @@ export function ProjectViewClient({
                           ? "bg-white/[0.05]"
                           : "hover:bg-white/[0.03]"
                       }`}
-                      onClick={() => selectTask(t.id)}
+                      onClick={() => {
+                        setCreateMode(false);
+                        selectTask(t.id);
+                      }}
                     >
                       {/* Status quick-toggle */}
                       <StatusDot
@@ -696,18 +699,44 @@ export function ProjectViewClient({
             <div>
               <h2 className="text-sm font-bold text-white">Task Detail</h2>
               <p className="text-xs text-white/35 mt-0.5">
-                {selectedTask
-                  ? isEditDirty
-                    ? "Unsaved changes — save or discard"
-                    : "All fields editable inline"
-                  : "Select a task to view details"}
+                {createMode
+                  ? "Creating a new task"
+                  : selectedTask
+                    ? isEditDirty
+                      ? "Unsaved changes — save or discard"
+                      : "All fields editable inline"
+                    : "Select a task to view details"}
               </p>
             </div>
           </div>
 
           <div className="p-5">
             <AnimatePresence mode="wait">
-              {!selectedTask ? (
+              {createMode ? (
+                <motion.div
+                  key="create"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                >
+                  <CreateTaskForm
+                    createTitle={createTitle}
+                    setCreateTitle={setCreateTitle}
+                    createDescription={createDescription}
+                    setCreateDescription={setCreateDescription}
+                    createStatus={createStatus}
+                    setCreateStatus={setCreateStatus}
+                    createAssigneeId={createAssigneeId}
+                    setCreateAssigneeId={setCreateAssigneeId}
+                    createDueDate={createDueDate}
+                    setCreateDueDate={setCreateDueDate}
+                    createSaving={createSaving}
+                    members={members}
+                    onSubmit={onCreate}
+                    onCancel={cancelCreate}
+                  />
+                </motion.div>
+              ) : !selectedTask ? (
                 <motion.div
                   key="empty"
                   initial={{ opacity: 0 }}
@@ -715,38 +744,15 @@ export function ProjectViewClient({
                   exit={{ opacity: 0 }}
                   className="flex flex-col items-center justify-center py-10 text-center"
                 >
-                  {!createMode ? (
-                    <>
-                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] border border-white/[0.08]">
-                        <Pencil className="h-6 w-6 text-white/20" />
-                      </div>
-                      <p className="mt-4 text-sm text-white/40">
-                        {tasks.length === 0 ? "No tasks yet" : "Select a task from the list"}
-                      </p>
-                      {tasks.length === 0 && (
-                        <button onClick={startCreate} className="btn-glass mt-4 !py-2 !px-4 !text-xs">
-                          <Plus className="h-3.5 w-3.5 inline mr-1" /> Add task
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <CreateTaskForm
-                      createTitle={createTitle}
-                      setCreateTitle={setCreateTitle}
-                      createDescription={createDescription}
-                      setCreateDescription={setCreateDescription}
-                      createStatus={createStatus}
-                      setCreateStatus={setCreateStatus}
-                      createAssigneeId={createAssigneeId}
-                      setCreateAssigneeId={setCreateAssigneeId}
-                      createDueDate={createDueDate}
-                      setCreateDueDate={setCreateDueDate}
-                      createSaving={createSaving}
-                      members={members}
-                      onSubmit={onCreate}
-                      onCancel={cancelCreate}
-                    />
-                  )}
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] border border-white/[0.08]">
+                    <Pencil className="h-6 w-6 text-white/20" />
+                  </div>
+                  <p className="mt-4 text-sm text-white/40">
+                    {tasks.length === 0 ? "No tasks yet" : "Select a task from the list"}
+                  </p>
+                  <button onClick={startCreate} className="btn-glass mt-4 !py-2 !px-4 !text-xs">
+                    <Plus className="h-3.5 w-3.5 inline mr-1" /> Add task
+                  </button>
                 </motion.div>
               ) : (
                 <motion.form
